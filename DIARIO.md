@@ -73,3 +73,11 @@ O desafio técnico central é: dado um heap com milhões de objetos alocados via
 - Barreira de escrita com mprotect capturando escritas de velha→jovem.
 - Disparo de coleta por pressão de memória (não só manual).
 - Sem data races reportadas pelo ThreadSanitizer (se a coleta rodar concorrente com mutação).
+
+## Estudos técnicos
+
+### Árvore de Intervalos
+
+- Entendido o funcionamento da árvore de intervalos com ajuda do Gemini e Claude.
+- Implementada árvore de intervalos (AVL) com insert, remove, findPoint, findInterval.
+- Removida a lógica de duplicatas por `high` no `removeInterval`: como cada objeto alocado ocupa um range de endereço único e disjunto, não há necessidade de tratar múltiplos nós com o mesmo `low`. Simplifica o delete para BST clássico.
