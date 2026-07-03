@@ -95,6 +95,27 @@ static void it_should_return_null_on_heap_overflow(void) {
   printf("it_should_return_null_on_heap_overflow: OK\n");
 }
 
+static void generate_garbage(size_t chunk_size) {
+  void *p1 = gc_malloc(chunk_size);
+  void *p2 = gc_malloc(chunk_size);
+    
+  assert(p1 != NULL);
+  assert(p2 != NULL);
+}
+
+static void it_should_trigger_gc_automatically_when_heap_is_full(void) {
+  size_t large_chunk = 400000; 
+  generate_garbage(large_chunk);
+
+  volatile char dummy[1024];
+  memset((void *)dummy, 0, sizeof(dummy));
+
+  void *new_ptr = gc_malloc(large_chunk);
+
+  assert(new_ptr != NULL); 
+  printf("it should trigger gc automatically when heap is full: OK\n", new_ptr);
+}
+
 int main(void) {
   it_should_initialize_gc_and_allocate_memory();
   it_should_create_hidden_header_with_correct_metadata();
