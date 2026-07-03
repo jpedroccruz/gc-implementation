@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <assert.h>
 #include <stdlib.h>
-#include "../lib/interval-tree-int.h"
+#include "../lib/interval-tree.h"
 
 static int checkInvariants(Node *node, int *ok) {
   if (node == NULL) return -1;
@@ -11,34 +11,34 @@ static int checkInvariants(Node *node, int *ok) {
 
   int expectedHeight = 1 + ((leftHeight > rightHeight) ? leftHeight : rightHeight);
   if (node->height != expectedHeight) {
-    printf("[INVARIANTE QUEBRADA] no [%d,%d]: height=%d, esperado=%d\n",
+    printf("[INVARIANTE QUEBRADA] no [%ju,%ju]: height=%d, esperado=%d\n",
            node->i->low, node->i->high, node->height, expectedHeight);
     *ok = 0;
   }
 
   int balance = leftHeight - rightHeight;
   if (balance < -1 || balance > 1) {
-    printf("[INVARIANTE QUEBRADA] no [%d,%d]: fator de balanceamento=%d (fora de [-1,1])\n",
+    printf("[INVARIANTE QUEBRADA] no [%ju,%ju]: fator de balanceamento=%d (fora de [-1,1])\n",
            node->i->low, node->i->high, balance);
     *ok = 0;
   }
 
-  int expectedMax = node->i->high;
-  if (node->left  != NULL && node->left->max  > expectedMax) expectedMax = node->left->max;
+  uintptr_t expectedMax = node->i->high;
+  if (node->left  != NULL && node->left->max > expectedMax) expectedMax = node->left->max;
   if (node->right != NULL && node->right->max > expectedMax) expectedMax = node->right->max;
   if (node->max != expectedMax) {
-    printf("[INVARIANTE QUEBRADA] no [%d,%d]: max=%d, esperado=%d\n",
+    printf("[INVARIANTE QUEBRADA] no [%ju,%ju]: max=%ju, esperado=%ju\n",
            node->i->low, node->i->high, node->max, expectedMax);
     *ok = 0;
   }
 
   if (node->left != NULL && node->left->i->low >= node->i->low) {
-    printf("[INVARIANTE QUEBRADA] no [%d,%d]: filho esquerdo com low >= pai\n",
+    printf("[INVARIANTE QUEBRADA] no [%ju,%ju]: filho esquerdo com low >= pai\n",
            node->i->low, node->i->high);
     *ok = 0;
   }
   if (node->right != NULL && node->right->i->low < node->i->low) {
-    printf("[INVARIANTE QUEBRADA] no [%d,%d]: filho direito com low < pai\n",
+    printf("[INVARIANTE QUEBRADA] no [%ju,%ju]: filho direito com low < pai\n",
            node->i->low, node->i->high);
     *ok = 0;
   }
