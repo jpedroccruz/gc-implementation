@@ -81,3 +81,41 @@ O desafio técnico central é: dado um heap com milhões de objetos alocados via
 - Entendido o funcionamento da árvore de intervalos com ajuda do Gemini e Claude.
 - Implementada árvore de intervalos (AVL) com insert, remove, findPoint, findInterval.
 - Removida a lógica de duplicatas por `high` no `removeInterval`: como cada objeto alocado ocupa um range de endereço único e disjunto, não há necessidade de tratar múltiplos nós com o mesmo `low`. Simplifica o delete para BST clássico.
+
+### Memória Stack e memória Heap
+
+- Stack: Região de memória gerenciada automaticamente pelo SO/runtime, que cresce e encolhe conforme funções são chamadas e retornam. Cada chamada de função cria um "quadro" (stack frame) com variáveis locais, parâmetros e endereço de retorno; ao retornar, o frame inteiro é descartado de uma vez, sem nenhuma decisão manual de liberação. É rápida (só move um ponteiro de topo) e de vida curta — variáveis locais somem quando a função termina.
+  - Valores alocados na stack:
+  - Variáveis locais primitivas: int x;, double y;, char c; dentro de uma função.
+  - Structs locais declaradas por valor: Point p = {1, 2};.
+  - Arrays de tamanho fixo declarados localmente: int buffer[100];.
+  - Parâmetros de função (as cópias locais, não o que eles apontam).
+  - Ponteiros em si (a variável ponteiro ocupa espaço na stack, mesmo que aponte pra heap): int \*ptr = malloc(sizeof-(int)); — o ptr mora na stack, o int que ele aponta mora na heap.
+  - Endereço de retorno e registradores salvos de cada chamada de função (o frame inteiro).
+
+- Heap: Região de memória que não é liberada automaticamente por escopo — permanece alocada até alguém explicitamente devolvê-la (seja com free, seja pela coleta do seu GC). Diferente da stack, tem vida longa e imprevisível: um objeto pode sobreviver muito além da função que o criou.
+- Valores alocados na heap:
+  - Nós gerados dinamicamente para listas encadeadas, árvores, grafos: qualquer malloc(sizeof(Node)) dentro de uma função como createNode.
+  - Arrays de tamanho variável em tempo de execução: int _arr = malloc(n _ sizeof(int));, onde n só é conhecido em runtime.
+  - Structs retornadas por funções "fábrica" que precisam sobreviver ao fim da função que as criou: Person \*p = malloc(sizeof(Person)); dentro de create_person(), retornado pro chamador.
+  - Buffers redimensionáveis: strings construídas dinamicamente, ou qualquer coisa que use realloc conforme cresce.
+  - Regiões grandes mapeadas via mmap() — usado quando se quer controle direto sobre a memória (fora do alocador padrão do sistema), como um heap próprio de uma aplicação.
+  - Qualquer estrutura cuja vida útil precisa ultrapassar o escopo da função que a criou — é justamente esse "sobreviver além do escopo" que caracteriza a necessidade de heap em vez de stack.
+
+#### Heap
+
+Para construir as funções da utilização da memória heap, foi utilizado o Claude para entendimento e diferenciação entre memória heap como conceito e memória heap como implementação. Além disso, foi utilizado para ajudar a contruir os testes unitários das implementações.
+
+Diferença entre malloc e funções manipuladoras da heap:
+
+- Heap com malloc:
+  - Ele mantém suas próprias estruturas internas (free lists organizadas por faixa de tamanho, metadados escondidos antes de cada bloco, etc.).
+  - Ele decide onde exatamente cada alocação vai (busca um buraco livre de tamanho compatível, ou fatia um maior).
+  - Você não sabe, e não pode saber, onde um objeto está fisicamente, nem quais objetos estão "vizinhos" na memória, nem varrer essa região de forma organizada — é uma caixa preta.
+  - A liberação é manual e individual: você chama free exatamente quando decide que aquele objeto específico não é mais necessário.
+
+- Heap com funções implementadas:
+  - Você pede uma região grande e contígua de uma vez (mmap), não um objeto por vez.
+  - Você sabe exatamente onde cada objeto está dentro dessa região — é só aritmética sobre base + offset, nada escondido.
+  - Como você controla o layout, você consegue varrer a região inteira sequencialmente (percorrer todos os objetos, um atrás do outro) — coisa que é impossível de fazer de forma confiável com memória alocada via malloc espalhada pelo processo.
+  - Não existe free individual. Nenhum objeto é liberado sozinho quando você "termina" de usá-lo.
