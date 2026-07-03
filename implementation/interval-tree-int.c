@@ -1,18 +1,7 @@
+#include "../lib/interval-tree-int.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
-
-typedef struct Interval {
-  int low, high;
-} Interval;
-
-typedef struct Node {
-  Interval *i;
-  int max;
-  int height;
-
-  struct Node *right, *left;
-} Node;
 
 Node *createNode(Interval *i) {
   Node *new_node = malloc(sizeof(Node));
@@ -206,37 +195,4 @@ void removeInterval(Node **node, Interval *i) {
     leftRotation(node);
     return;
   }
-}
-
-int main(void) {
-  Node *root = NULL;
-
-  Interval i1 = {1, 2};
-  Interval i2 = {2, 4};
-  Interval i3 = {3, 6};
-  Interval i4 = {4, 8};
-  Interval i5 = {2, 3};
-
-  insert(&root, &i1);
-  insert(&root, &i2);
-  insert(&root, &i3);
-  insert(&root, &i4);
-
-  printTree(root, 0);
-
-  // findInterval(root, &i5) != NULL ?
-  //   printf("Intervalo [%d,%d]", findInterval(root, &i5)->i->low, findInterval(root, &i5)->i->high) :
-  //   printf("Intervalo inexistente");
-
-  // int point = 10;
-  // findPoint(root, point) != NULL ?
-  //   printf("%d está no intervalo [%d,%d]", point, findPoint(root, point)->i->low, findPoint(root, point)->i->high) : printf("%d não pertence a nenhum intervalo", point);
-
-  removeInterval(&root, &i2);
-
-  printf("\n\n\n");
-
-  printTree(root, 0);
-
-  return 0;
 }
