@@ -2,6 +2,7 @@
 
 PROMPT PRINCIPAL:
 
+```
 O arquivo linkado é meu trabalho de SO + ED da faculdade. Quero que me ajude a planejar, estruturar e fazer o trabalho, entendendo todos os pontos para realizar a minha apresentação, que será no dia 06. Para começar, quero que leia o tema 15, do garbage collector (que foi o qual eu escolhi) e me responda:
 
 - qual é o problema central?
@@ -9,6 +10,7 @@ O arquivo linkado é meu trabalho de SO + ED da faculdade. Quero que me ajude a 
 - quais são os núcleos de SO e ED?
 
 seja direto em cada resposta, dando apenas o necessário para depois eu analisar cada tópico com mais profundidade.
+```
 
 ## O problema
 
@@ -125,6 +127,22 @@ Diferença entre malloc e funções manipuladoras da heap:
 
 # 03/07 - Conectando ferramentas
 
+PROMPT PRINCIPAL:
+
+```
+Fiz alguns estudos e implementações ontem, vou te dizer onde parei e quero ajuda para continuar progredindo.
+
+Ontem foquei na parte técnica do estudo; sem base técnica = sem projeto entendível.
+
+- Entendi o todo do trabalho, depois dividi em pequenas partes;
+- Estudei e implementei como funciona a árvore de intervalos com int e dpois com uintptr_t para alocar dados de 64 bits como os endereços de memória;
+- Estudei como funciona a memória de um processo, memória stack e heap;
+- Estudei a necessidade um garbage collector na hora de alocar memória;
+- Estudei e implementei o conceito de memória Heap;
+
+Depois desses estudos, qual o próximo passo para continuar os estudos e as implementações?
+```
+
 ## A Ponte entre Heap e Árvore de Intervalos (gc_malloc + ObjHeader)
 
 Até então, o gerenciamento do Heap e a Árvore de Intervalos funcionavam de forma isolada. Hoje, implementamos a ponte que une essas duas estruturas no método gc_malloc, utilizando o conceito de Cabeçalho Oculto (ObjHeader):
@@ -146,3 +164,67 @@ A Solução por Valor: Alteramos a assinatura da árvore para receber a estrutur
 Ganhos Técnicos com a Mudança:
 
 Segurança Robusta: Ao passar por valor, o C faz uma cópia real dos 16 bytes do intervalo para dentro do escopo receptor. O nó da árvore agora armazena os dados clonados de forma estática e segura no Heap do C, sem nenhuma dependência do ciclo de vida da pilha.
+
+## Varredura Conservadora
+
+Como a linguagem C não possui um ambiente de execução (runtime) que gerencie tipos, o compilador joga ponteiros e números inteiros na Pilha (Stack) como bytes puros. Sem saber o que é o quê, o Garbage Collector adota uma postura conservadora: se um valor de 8 bytes na Stack parecer um endereço do nosso Heap, assumimos que ele é um ponteiro para poupar o objeto de ser deletado.
+
+### O Fluxo da Inspeção da Stack
+
+O processo de espiar a memória ativa do programa ocorre em 4 etapas cirúrgicas:
+
+- Definição das Fronteiras: Mapeamos o início da pilha (stack_base, capturado na inicialização do main) e o topo atual (stack_top, obtido no momento do disparo da coleta).
+- Snapshot da CPU (setjmp): Forçamos a CPU a despejar o conteúdo de seus registradores internos (como RAX, RBX) para dentro da Stack. Isso garante que ponteiros temporários processados pelo processador não sejam ignorados.
+- Varredura Alinhada (Word-by-Word): Criamos um loop que caminha do topo à base da pilha, lendo a memória estritamente de 8 em 8 bytes (tamanho de um ponteiro em sistemas de 64 bits).
+- Filtro de Validação: Para cada valor de 64 bits lido, aplicamos o seguinte teste:
+  - O valor numérico está dentro dos limites do nosso Heap?
+  - Esse endereço exato existe indexado na nossa Árvore AVL de alocações?
+  - Se sim: O objeto correspondente está vivo e recebe a flag marked = 1.
+
+### Etapas da varredura conservadora
+
+#### O Preâmbulo: Preparação da Pilha (A Captura)
+
+Antes do "Mark" começar de verdade, o GC precisa preparar o terreno. Essa etapa acontece nos primeiros milissegundos do disparo da coleta:
+
+Captura do Topo: O GC olha para onde o ponteiro de pilha atual está apontando naquele exato momento.
+
+O Snapshot (setjmp): A CPU é forçada a descarregar seus registradores na memória RAM (Pilha).
+
+Alinhamento de Fronteiras: O código garante que a leitura começará no menor endereço (topo) e irá até o maior endereço (base), "desentortando" a ordem caso a arquitetura da CPU exija.
+
+#### Parte 1: Mark Phase (Fase de Marcação)
+
+Com o terreno preparado, entramos na Fase de Marcação. O objetivo aqui é um só: descobrir e carimbar tudo o que ainda está vivo.
+
+Como ela funciona passo a passo:
+
+- A Varredura Linear: O coletor começa a caminhar pela Pilha de 8 em 8 bytes. Cada bloco de 8 bytes lido é tratado temporariamente como um número inteiro de 64 bits (uintptr_t).
+
+- O Teste de Sanidade (Filtro Conservador): Para cada número lido, o GC faz uma pergunta eliminatória: "Esse número está dentro do intervalo do meu Heap de 1MB?"
+  - Se não: O número é ignorado (é apenas um inteiro comum, texto, etc.).
+  - Se sim: Ele avança para o teste definitivo na Árvore.
+
+- A Consulta à Árvore AVL: O GC pega esse número e faz uma busca na árvore de intervalos. Ele quer saber se esse número aponta para dentro de algum bloco alocado.
+
+- O Carimbo de Vida: Se a árvore AVL encontrar o nó correspondente, o GC usa o ponteiro node->i.low para chegar até o início do bloco, acessa os metadados e altera a flag:
+
+Fim da Mark Phase: Ao final desta fase, a pilha inteira foi varrida. Tudo o que o usuário tinha acesso direto ou indireto recebeu o carimbo 1. O que restou com 0 é, oficialmente, lixo.
+
+#### Parte 2: Sweep Phase (Fase de Varredura/Limpeza)
+
+Agora que sabemos quem está vivo, entramos na Fase de Limpeza. O objetivo aqui é devolver a memória do lixo para o sistema e limpar os carimbos dos sobreviventes.
+
+Como ela funciona passo a passo:
+
+- A Inspeção dos Metadados: O coletor muda o foco. Ele deixa a Pilha de lado e passa a caminhar diretamente pela sua Árvore AVL de nós alocados (usando uma busca em ordem recursiva).
+
+- A Triagem dos Nós: Para cada nó visitado na árvore, o GC inspeciona o ObjHeader associado através do node->i.low:
+  - Se o objeto tem marked == 1 (Sobrevivente): Significa que ele passou com vida pela Mark Phase. O GC apenas limpa o carimbo, voltando ele para marked = 0. Isso é vital para que ele precise provar que está vivo novamente na próxima coleta.
+  - Se o objeto tem marked == 0 (Lixo): Ele virou um fantasma. O usuário não tem mais como acessá-lo. O GC anota o intervalo desse nó em uma lista de exclusão.
+
+- A Purga Real: Fora da busca recursiva da árvore (para evitar corromper os ponteiros de navegação), o GC percorre a lista de exclusão e executa duas ações de limpeza:
+  - Remove o nó da Árvore AVL de metadados.
+  - Libera o bloco de memória física correspondente dentro do Heap de 1MB.
+
+Fim da Sweep Phase: O Heap foi limpo, o espaço foi recuperado e os objetos sobreviventes estão prontos para o programa continuar rodando até o próximo ciclo de falta de memória.
