@@ -1,11 +1,13 @@
 #include "../lib/gc.h"
 #include <stdlib.h>
 #include <stdio.h>
+#include <setjmp.h>
 
 #define YOUNG_GEN_SIZE (1024 * 1024)
 
 static Heap *youngGeneration = NULL;
 Node *global_root = NULL;
+void *stack_base = NULL;
 
 void gc_init(void) {
   if (youngGeneration == NULL) {
@@ -15,6 +17,38 @@ void gc_init(void) {
       perror("Failed to init GC Heap.");
       exit(1);
     }
+  }
+}
+
+void gc_collect(void) {
+  if (stack_base == NULL) return;
+  
+  jmp_buf registers;
+  setjmp(registers);
+
+  void *stack_top = &registers;
+
+  uintptr_t *current = (uintptr_t *)stack_top;
+  uintptr_t *end = (uintptr_t *)stack_base;
+
+  if (current > end) {
+    uintptr_t *tmp = current;
+    current = end;
+    end = tmp;
+  }
+
+  while (current < end) {
+    uintptr_t pointer = *current;
+
+    Node *node = findPoint(global_root, pointer);
+
+    if (node) {
+      ObjHeader *header = (ObjHeader *)node->i.low;
+
+      if (header->marked == 0) header->marked = 1;
+    }
+
+    current++;
   }
 }
 
