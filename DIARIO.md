@@ -81,6 +81,9 @@ O desafio técnico central é: dado um heap com milhões de objetos alocados via
 - Entendido o funcionamento da árvore de intervalos com ajuda do Gemini e Claude.
 - Implementada árvore de intervalos (AVL) com insert, remove, findPoint, findInterval.
 - Removida a lógica de duplicatas por `high` no `removeInterval`: como cada objeto alocado ocupa um range de endereço único e disjunto, não há necessidade de tratar múltiplos nós com o mesmo `low`. Simplifica o delete para BST clássico.
+- Árvore implementada com `int`, migrado `low`/`high`/`max` para `uintptr_t`, já que endereços de memória de 64 bits não cabem em `int`.
+- Criada função `getMaxHeight` separada de `getMaxValue`, pois misturar as duas (comparar alturas `int`, que podem ser -1, usando a função de `uintptr_t`) quebrava silenciosamente o cálculo de altura de nós com filho `NULL` (valor negativo vira número gigante em tipo sem sinal).
+- Corrigidos também `printTree` (formato `%ju` no lugar de `%d`) e `findPoint` (parâmetro `point` migrado para `uintptr_t`, evitando erro de comparação de sinal).
 
 ### Memória Stack e memória Heap
 
