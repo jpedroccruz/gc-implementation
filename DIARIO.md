@@ -122,3 +122,27 @@ Diferença entre malloc e funções manipuladoras da heap:
   - Você sabe exatamente onde cada objeto está dentro dessa região — é só aritmética sobre base + offset, nada escondido.
   - Como você controla o layout, você consegue varrer a região inteira sequencialmente (percorrer todos os objetos, um atrás do outro) — coisa que é impossível de fazer de forma confiável com memória alocada via malloc espalhada pelo processo.
   - Não existe free individual. Nenhum objeto é liberado sozinho quando você "termina" de usá-lo.
+
+# 03/07 - Conectando ferramentas
+
+## A Ponte entre Heap e Árvore de Intervalos (gc_malloc + ObjHeader)
+
+Até então, o gerenciamento do Heap e a Árvore de Intervalos funcionavam de forma isolada. Hoje, implementamos a ponte que une essas duas estruturas no método gc_malloc, utilizando o conceito de Cabeçalho Oculto (ObjHeader):
+
+Alocação Inteligente: Quando o usuário solicita memória (ex: 50 bytes), o gc_malloc calcula o espaço necessário para o cabeçalho de metadados + os dados úteis (sizeof(ObjHeader) + 50). Esse bloco total é alocado sequencialmente no nosso Heap gerenciado.
+
+Escondendo o Cabeçalho: O ObjHeader é preenchido no início do bloco alocado com as informações vitais exigidas pelo edital (tamanho útil, controle de geração e flag de marcação). O ponteiro retornado para o usuário final é deslocado adiante, apontando exatamente para onde terminam os metadados.
+
+Blindagem com Canário: Injetamos um valor mágico fixo (0xDEADC0DE) como o último campo da struct ObjHeader. Ele funciona como uma barreira de proteção (Canário de Memória). Se o programa do usuário corromper a memória escrevendo para trás (Buffer Underflow), o canário morrerá e o GC detectará a violação com segurança antes de estourar um Segmentation Fault.
+
+## Refatoração Arquitetural: Mudança de Ponteiro (\*i) para Valor (i)
+
+Identificamos um risco crítico de segurança na árvore e realizamos uma refatoração profunda na forma como o Interval trafega pelo sistema:
+
+O Problema Original: As funções insert e createNode recebiam um ponteiro Interval \*i. Como a variável de intervalo era instanciada localmente dentro do gc_malloc, ela residia na Pilha (Stack). Assim que o gc_malloc terminava, essa memória da pilha era liberada, deixando a Árvore de Intervalos apontando para "ponteiros fantasmas" (dangling pointers), um comportamento indefinido perigoso.
+
+A Solução por Valor: Alteramos a assinatura da árvore para receber a estrutura Interval i diretamente por valor.
+
+Ganhos Técnicos com a Mudança:
+
+Segurança Robusta: Ao passar por valor, o C faz uma cópia real dos 16 bytes do intervalo para dentro do escopo receptor. O nó da árvore agora armazena os dados clonados de forma estática e segura no Heap do C, sem nenhuma dependência do ciclo de vida da pilha.
