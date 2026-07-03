@@ -1,4 +1,4 @@
-#include "../lib/interval-tree-int.h"
+#include "../lib/interval-tree.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -15,7 +15,11 @@ Node *createNode(Interval *i) {
   return new_node;
 }
 
-int getMaxValue(int x, int y) {
+uintptr_t getMaxValue(uintptr_t x, uintptr_t y) {
+  return (x > y) ? x : y; 
+}
+
+int getMaxHeight(int x, int y) {
   return (x > y) ? x : y; 
 }
 
@@ -45,8 +49,8 @@ void rightRotation(Node **n) {
   nl->right = *n;
   (*n)->left = nlr;
 
-  (*n)->height = 1 + getMaxValue(getNodeHeight((*n)->left), getNodeHeight((*n)->right));
-  nl->height = 1 + getMaxValue(getNodeHeight(nl->left), getNodeHeight(nl->right));
+  (*n)->height = 1 + getMaxHeight(getNodeHeight((*n)->left), getNodeHeight((*n)->right));
+  nl->height = 1 + getMaxHeight(getNodeHeight(nl->left), getNodeHeight(nl->right));
 
   updateMax(*n);
   updateMax(nl);
@@ -61,8 +65,8 @@ void leftRotation(Node **n) {
   nr->left = *n;
   (*n)->right = nrl;
 
-  (*n)->height = 1 + getMaxValue(getNodeHeight((*n)->left), getNodeHeight((*n)->right));
-  nr->height = 1 + getMaxValue(getNodeHeight(nr->left), getNodeHeight(nr->right));
+  (*n)->height = 1 + getMaxHeight(getNodeHeight((*n)->left), getNodeHeight((*n)->right));
+  nr->height = 1 + getMaxHeight(getNodeHeight(nr->left), getNodeHeight(nr->right));
 
   updateMax(*n);
   updateMax(nr);
@@ -79,7 +83,7 @@ void insert(Node **root, Interval *i) {
   if (i->low < (*root)->i->low) insert(&(*root)->left, i);
   else insert(&(*root)->right, i);
 
-  (*root)->height = 1 + getMaxValue(getNodeHeight((*root)->left), getNodeHeight((*root)->right));
+  (*root)->height = 1 + getMaxHeight(getNodeHeight((*root)->left), getNodeHeight((*root)->right));
   updateMax(*root);
 
   int balanceFactor = getBalanceFactor(*root);
@@ -115,7 +119,7 @@ void printTree(Node *root, int level) {
   if (root != NULL) {
     printTree(root->right, level + 1);
     for (int i = 0; i < level * 5; i++) printf(" ");
-    printf("[%d, %d] max=%d\n\n", root->i->low, root->i->high, root->max);
+    printf("[%ju, %ju] max=%ju\n\n", root->i->low, root->i->high, root->max);
     printTree(root->left, level + 1);
   }
 }
@@ -127,7 +131,7 @@ Node *findInterval(Node *node, Interval *i) {
   else return findInterval(node->right, i);
 }
 
-Node *findPoint(Node *node, int point) {
+Node *findPoint(Node *node, uintptr_t point) {
   if (node == NULL) return NULL;
   if (node->i->low <= point && node->i->high >= point) return node;
   if (node->left != NULL && node->left->max >= point) return findPoint(node->left, point);
@@ -165,7 +169,7 @@ void removeInterval(Node **node, Interval *i) {
 
   if (*node == NULL) return;
 
-  (*node)->height = 1 + getMaxValue(getNodeHeight((*node)->left), getNodeHeight((*node)->right));
+  (*node)->height = 1 + getMaxHeight(getNodeHeight((*node)->left), getNodeHeight((*node)->right));
   updateMax(*node);
 
   int balanceFactor = getBalanceFactor(*node);
