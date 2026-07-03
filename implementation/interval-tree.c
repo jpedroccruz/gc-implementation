@@ -3,13 +3,13 @@
 #include <stdio.h>
 #include <stdint.h>
 
-Node *createNode(Interval *i) {
+Node *createNode(Interval i) {
   Node *new_node = malloc(sizeof(Node));
 
   new_node->i = i;
   new_node->left = NULL;
   new_node->right = NULL;
-  new_node->max = i->high;
+  new_node->max = i.high;
   new_node->height = 0;
 
   return new_node;
@@ -26,7 +26,7 @@ int getMaxHeight(int x, int y) {
 void updateMax(Node *node) {
   if (node == NULL) return;
 
-  node->max = node->i->high;
+  node->max = node->i.high;
 
   if (node->left != NULL && node->left->max > node->max) node->max = node->left->max;
   if (node->right != NULL && node->right->max > node->max) node->max = node->right->max;
@@ -74,13 +74,13 @@ void leftRotation(Node **n) {
   *n = nr;
 }
 
-void insert(Node **root, Interval *i) {
+void insert(Node **root, Interval i) {
   if (*root == NULL) {
     *root = createNode(i);
     return;
   }
 
-  if (i->low < (*root)->i->low) insert(&(*root)->left, i);
+  if (i.low < (*root)->i.low) insert(&(*root)->left, i);
   else insert(&(*root)->right, i);
 
   (*root)->height = 1 + getMaxHeight(getNodeHeight((*root)->left), getNodeHeight((*root)->right));
@@ -89,26 +89,26 @@ void insert(Node **root, Interval *i) {
   int balanceFactor = getBalanceFactor(*root);
 
   // LL
-  if (balanceFactor > 1 && i->low < (*root)->left->i->low) {
+  if (balanceFactor > 1 && i.low < (*root)->left->i.low) {
     rightRotation(root);
     return;
   }
 
   // RR
-  else if (balanceFactor < -1 && i->low >= (*root)->right->i->low) {
+  else if (balanceFactor < -1 && i.low >= (*root)->right->i.low) {
     leftRotation(root);
     return;
   }
 
   // LR
-  else if (balanceFactor > 1 && i->low >= (*root)->left->i->low) {
+  else if (balanceFactor > 1 && i.low >= (*root)->left->i.low) {
     leftRotation(&(*root)->left);
     rightRotation(root);
     return;
   }
 
   // RL
-  else if (balanceFactor < -1 && i->low < (*root)->right->i->low) {
+  else if (balanceFactor < -1 && i.low < (*root)->right->i.low) {
     rightRotation(&(*root)->right);
     leftRotation(root);
     return;
@@ -119,21 +119,21 @@ void printTree(Node *root, int level) {
   if (root != NULL) {
     printTree(root->right, level + 1);
     for (int i = 0; i < level * 5; i++) printf(" ");
-    printf("[%ju, %ju] max=%ju\n\n", root->i->low, root->i->high, root->max);
+    printf("[%ju, %ju] max=%ju\n\n", root->i.low, root->i.high, root->max);
     printTree(root->left, level + 1);
   }
 }
 
-Node *findInterval(Node *node, Interval *i) {
+Node *findInterval(Node *node, Interval i) {
   if (node == NULL) return NULL;
-  if (node->i->high >= i->low && node->i->low <= i->high) return node;
-  if (node->left != NULL && node->left->max >= i->low) return findInterval(node->left, i);
+  if (node->i.high >= i.low && node->i.low <= i.high) return node;
+  if (node->left != NULL && node->left->max >= i.low) return findInterval(node->left, i);
   else return findInterval(node->right, i);
 }
 
 Node *findPoint(Node *node, uintptr_t point) {
   if (node == NULL) return NULL;
-  if (node->i->low <= point && node->i->high >= point) return node;
+  if (node->i.low <= point && node->i.high >= point) return node;
   if (node->left != NULL && node->left->max >= point) return findPoint(node->left, point);
   else return findPoint(node->right, point);
 }
@@ -143,11 +143,11 @@ Node *getMinValue(Node *node) {
   return node;
 }
 
-void removeInterval(Node **node, Interval *i) {
+void removeInterval(Node **node, Interval i) {
   if (*node == NULL) return;
   
-  if ((*node)->i->low > i->low) removeInterval(&(*node)->left, i);
-  else if ((*node)->i->low < i->low) removeInterval(&(*node)->right, i);
+  if ((*node)->i.low > i.low) removeInterval(&(*node)->left, i);
+  else if ((*node)->i.low < i.low) removeInterval(&(*node)->right, i);
   else {
     if ((*node)->left == NULL && (*node)->right == NULL) {
       free(*node);

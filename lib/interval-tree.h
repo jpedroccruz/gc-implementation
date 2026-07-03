@@ -8,25 +8,25 @@ typedef struct Interval {
 } Interval;
 
 typedef struct Node {
-  Interval *i;
+  Interval i;
   uintptr_t max;
   int height;
 
   struct Node *right, *left;
 } Node;
 
-Node *createNode(Interval *i);
+Node *createNode(Interval i);
 uintptr_t getMaxValue(uintptr_t x, uintptr_t y);
 void updateMax(Node *node);
 int getNodeHeight(Node *node);
 int getBalanceFactor(Node *node);
 void rightRotation(Node **n);
 void leftRotation(Node **n);
-void insert(Node **root, Interval *i);
+void insert(Node **root, Interval i);
 void printTree(Node *root, int level);
-Node *findInterval(Node *node, Interval *i);
+Node *findInterval(Node *node, Interval i);
 Node *findPoint(Node *node, uintptr_t point);
 Node *getMinValue(Node *node);
-void removeInterval(Node **node, Interval *i);
+void removeInterval(Node **node, Interval i);
 
 #endif
