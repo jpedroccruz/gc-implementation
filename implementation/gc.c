@@ -62,8 +62,14 @@ void *gc_malloc(size_t size) {
   void *mem = allocHeap(youngGeneration, totalSize);
 
   if (mem == NULL) {
-    // gc_collector()
-    return NULL;
+    gc_collect();
+
+    mem = allocHeap(youngGeneration, totalSize);
+
+    if (mem == NULL) {
+      perror("Out of Memory. Heap is full.");
+      exit(1);
+    }
   }
 
   ObjHeader *header = (ObjHeader *)mem;
