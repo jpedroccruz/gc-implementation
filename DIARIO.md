@@ -228,3 +228,19 @@ Como ela funciona passo a passo:
   - Libera o bloco de memória física correspondente dentro do Heap de 1MB.
 
 Fim da Sweep Phase: O Heap foi limpo, o espaço foi recuperado e os objetos sobreviventes estão prontos para o programa continuar rodando até o próximo ciclo de falta de memória.
+
+## O Gargalo no Heap e a Necessidade do GC Geracional
+
+### 🛑 Problema Encontrado
+
+Durante os testes unitários, o teste de estouro de Heap (`it_should_trigger_gc_automatically_when_heap_is_full`) falhou com erro de _Out of Memory_.
+
+### 🔍 Causa Raiz
+
+O nosso Heap atual funciona como uma **Arena (Bump Allocator)**. O `gc_sweep` consegue remover com sucesso os intervalos da Árvore AVL, mas isso apenas deleta o registro do objeto. Fisicamente, o ponteiro de alocação da Arena não volta para trás.
+
+A única forma de liberar espaço físico na Arena é via `resetHeap()`, que exige que a árvore esteja 100% vazia (`global_root == NULL`). Como os testes anteriores deixaram objetos legítimos e vivos na Stack do `main`, a árvore nunca zerava. Logo, o espaço físico do lixo nunca era recuperado, travando alocações subsequentes.
+
+### 💡 Solução Arquitetural
+
+Evoluir o coletor para o **Modelo Geracional**. Em vez de dependermos de a árvore ficar vazia para resetar o Heap, passaremos a **copiar (evacuar)** os objetos sobreviventes da `youngGeneration` para uma `oldGeneration`. Dessa forma, o Heap jovem poderá sofrer um `resetHeap()` obrigatório a cada ciclo, limpando 100% do espaço físico de forma segura.
