@@ -2,15 +2,24 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <setjmp.h>
+#include <string.h>
 
 #define YOUNG_GEN_SIZE (1024 * 1024)
+#define OLD_GEN_SIZE (4 * 1024 * 1024)
 #define MAX_GARBAGE 1024
 
 static Heap *youngGeneration = NULL;
+static Interval youngIntervals[MAX_GARBAGE];
+static int youngCount = 0;
+
+static Heap *oldGeneration = NULL;
+
 Node *global_root = NULL;
 void *stack_base = NULL;
 
-void gc_init(void) {
+void gc_init(void *stack_bottom) {
+  stack_base = stack_bottom;
+
   if (youngGeneration == NULL) {
     youngGeneration = createHeap(YOUNG_GEN_SIZE);
 
@@ -19,36 +28,65 @@ void gc_init(void) {
       exit(1);
     }
   }
+
+  if (oldGeneration == NULL) {
+    oldGeneration = createHeap(OLD_GEN_SIZE);
+
+    if (!oldGeneration) {
+      perror("Failed to init Old Gen Heap.");
+      exit(1);
+    }
+  }
 }
 
-static void scan_and_collect_garbage(Node *root, Interval *garbageList, int *garbageCount) {
-  if (root == NULL) return;
+static void collect_young_intervals(Node *root) {
+  if (root == NULL || youngCount >= MAX_GARBAGE) return;
 
-  scan_and_collect_garbage(root->left, garbageList, garbageCount);
+  collect_young_intervals(root->left);
 
   ObjHeader *header = (ObjHeader *)root->i.low;
 
-  if (header->marked == 1) header->marked = 0;
-  else {
-    if (*garbageCount < MAX_GARBAGE) {
-      garbageList[*garbageCount] = root->i;
-      (*garbageCount)++;
-    }
-  }
+  if (header->generation == 0) youngIntervals[youngCount++] = root->i;
 
-  scan_and_collect_garbage(root->right, garbageList, garbageCount);
+  collect_young_intervals(root->right);
 }
 
 void gc_sweep(void) {
-  Interval garbage[MAX_GARBAGE];
+  youngCount = 0;
+  
+  collect_young_intervals(global_root);
 
-  int garbageCount = 0;
+  for (int i = 0; i < youngCount; i++) {
+    uintptr_t low = youngIntervals[i].low;
+    ObjHeader *header = (ObjHeader *)low;
+    size_t totalSize = sizeof(ObjHeader) + header->size;
 
-  scan_and_collect_garbage(global_root, garbage, &garbageCount);
+    if (header->generation == 0) {
+      void *new_mem = allocHeap(oldGeneration, totalSize);
 
-  for (int i = 0; i < garbageCount; i++) removeInterval(&global_root, garbage[i]);
+      if (new_mem == NULL) {
+        perror("Out of Memory on Old Generation during evacuation.");
+        exit(1);
+      }
 
-  if (global_root == NULL) resetHeap(youngGeneration);  
+      memcpy(new_mem, (void *)low, totalSize);
+
+      ObjHeader *new_header = (ObjHeader *)new_mem;
+      new_header->generation = 1;
+      new_header->marked = 0;
+
+      uintptr_t low = (uintptr_t)new_mem;
+      uintptr_t high = low + totalSize;
+      Interval new_i = {low, high};
+
+      insert(&global_root, new_i);
+
+      header->generation = -1;
+      header->marked = 0;
+    } else removeInterval(&global_root, youngIntervals[i]);
+  }
+
+  resetHeap(youngGeneration);
 }
 
 void gc_collect(void) {
@@ -88,9 +126,13 @@ void gc_collect(void) {
 void *gc_malloc(size_t size) {
   if (size == 0) return NULL;
 
-  if (!youngGeneration) gc_init();
+  if (!youngGeneration) {
+    perror("GC was not initialized.");
+    exit(1);
+  }
   
   size_t totalSize = sizeof(ObjHeader) + size;
+  int allocatedGeneration = 0;
 
   void *mem = allocHeap(youngGeneration, totalSize);
 
@@ -100,14 +142,19 @@ void *gc_malloc(size_t size) {
     mem = allocHeap(youngGeneration, totalSize);
 
     if (mem == NULL) {
-      perror("Out of Memory. Heap is full.");
-      exit(1);
+      mem = allocHeap(oldGeneration, totalSize);
+      allocatedGeneration = 1;
+
+      if (mem == NULL) {
+        perror("Out of Memory. Heap is full.");
+        exit(1);
+      }
     }
   }
 
   ObjHeader *header = (ObjHeader *)mem;
   header->size = size;
-  header->generation = 0;
+  header->generation = allocatedGeneration;
   header->marked = 0;
   header->canary = 0xDEADC0DE;
 

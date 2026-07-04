@@ -13,7 +13,7 @@ typedef struct {
   uintptr_t canary;
 } ObjHeader;
 
-void gc_init(void);
+void gc_init(void *stack_bottom);
 void gc_sweep(void);
 void gc_collect(void);
 void *gc_malloc(size_t size);
