@@ -20,11 +20,11 @@ O desafio técnico central é: dado um heap com milhões de objetos alocados via
 
 ## Componentes
 
-[] Alocador de heap — gerência de memória via mmap, metadados de cada objeto alocado (tamanho, geração, marcação).
-[] Árvore de intervalos (interval tree) — estrutura central: mapeia faixas de endereço → objeto, para resolver "este endereço pertence a algum objeto vivo?" em O(log n).
-[] Varredura de raízes (root scanning) — descoberta de ponteiros na pilha e registradores via setjmp/inspeção do stack pointer (conservative scanning).
-[] Algoritmo de marcação (mark) — fila/pilha de marcação, percorrendo o grafo de objetos vivos a partir das raízes.
-[] Fase de varredura/coleta (sweep) — libera objetos não marcados de volta ao heap.
+[x] Alocador de heap — gerência de memória via mmap, metadados de cada objeto alocado (tamanho, geração, marcação).
+[x] Árvore de intervalos (interval tree) — estrutura central: mapeia faixas de endereço → objeto, para resolver "este endereço pertence a algum objeto vivo?" em O(log n).
+[x] Varredura de raízes (root scanning) — descoberta de ponteiros na pilha e registradores via setjmp/inspeção do stack pointer (conservative scanning).
+[x] Algoritmo de marcação (mark) — fila/pilha de marcação, percorrendo o grafo de objetos vivos a partir das raízes.
+[x] Fase de varredura/coleta (sweep) — libera objetos não marcados de volta ao heap.
 [] Geracional (2 gerações) — separação jovem/velha, coleta mais frequente na geração jovem, com barreira de escrita via mprotect para detectar referências de velha→jovem.
 [] Gatilho de coleta — disparo por pressão de memória ou chamada explícita.
 [] Medição de pausas — clock monotônico para medir stop-the-world de cada coleta.
@@ -244,3 +244,34 @@ A única forma de liberar espaço físico na Arena é via `resetHeap()`, que exi
 ### 💡 Solução Arquitetural
 
 Evoluir o coletor para o **Modelo Geracional**. Em vez de dependermos de a árvore ficar vazia para resetar o Heap, passaremos a **copiar (evacuar)** os objetos sobreviventes da `youngGeneration` para uma `oldGeneration`. Dessa forma, o Heap jovem poderá sofrer um `resetHeap()` obrigatório a cada ciclo, limpando 100% do espaço físico de forma segura.
+
+# 04/07, 05/07 e 06/06 - Se perdendo em conceitos
+
+## O Muro Técnico
+
+O fim de semana foi brutal. Tentar construir um Garbage Collector Geracional com barreira de escrita por hardware em C se mostrou um dos maiores desafios que já encarei. Entre o sábado e o domingo, me vi completamente afogado em um mar de conceitos complexos de baixo nível:
+
+- A sincronização manual de ponteiros na árvore AVL global (`global_root`).
+- O gerenciamento de páginas sujas (`dirtyPages`) interceptando sinais de hardware com o `mprotect`.
+- A dança de salvar registradores com `setjmp` para escanear a Stack.
+
+Cheguei a um ponto de saturação onde parecia que nada estava fazendo sentido. O código continuava incompleto, os bugs de ponteiros fantasmas persistiam e o desespero bateu forte. Eu tentava revisar as fases do `minor_gc_collect` e do `minor_gc_sweep`, mas a mente travava. Percebi que estava tentando decorar código em vez de dominar a arquitetura.
+
+## A Decisão Estratégica: Simplificação Radical
+
+Na noite do dia 05/07, faltando menos de 24 horas para a apresentação, tomei a decisão mais madura e sensata para salvar o projeto: **desliguei o compilador e fechei a IDE.** Não adiantava passar a madrugada tentando debugar ponteiros em C se eu chegasse na frente da banca exausto e sem conseguir explicar a lógica conceitual do sistema. Mudei o foco 100% para a criação dos **slides de apresentação**.
+
+### Organizando a Mente em 4 Slides
+
+Isolar o fluxo visual do coletor em 4 telas limpas foi o que me trouxe de volta para o jogo:
+
+1. **O Cenário Ideal (Fast Path):** O objeto nascendo limpo na Geração Jovem.
+2. **O Gatilho:** O momento em que o berçário lota.
+3. **A Marcação (Mark):** Identificando visualmente o que é lixo e o que está vivo através das raízes.
+4. **A Cópia/Promoção (Sweep):** Os sobreviventes sendo movidos para a Geração Velha e o berçário sendo resetado instantaneamente.
+
+## O Aprendizado
+
+Ao desenhar os slides e usar metáforas simples (como o "Berçário" e a "Sala da Diretoria"), os conceitos finalmente se encaixaram na minha cabeça. Entendi que se a banca me apertar sobre o código estar incompleto, vou defender o projeto como um **Arquiteto de Software**: a modelagem lógica, a triagem geracional e a estratégia de fallback de alocação direta estão perfeitas. O baixo nível em C foi o vilão do cronograma, mas o domínio do problema está garantido.
+
+Vou para a apresentação amanhã não como um digitador de código, mas como alguém que entende como as maiores engines do mercado (como a JVM do Java e a V8 do JavaScript) gerenciam memória por baixo dos panos.
