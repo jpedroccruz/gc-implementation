@@ -1,24 +1,101 @@
-#include "../lib/gc.h"
+#define _GNU_SOURCE
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <setjmp.h>
 #include <string.h>
+#include <time.h>
+
+#include <signal.h>
+#include <unistd.h>
+#include <sys/mman.h>
+
+#include "../lib/gc.h"
 
 #define YOUNG_GEN_SIZE (1024 * 1024)
 #define OLD_GEN_SIZE (4 * 1024 * 1024)
 #define MAX_GARBAGE 1024
+#define MAX_STACK_SIZE 8192
+#define MAX_DIRTY_PAGES 1024
+#define MAX_FREE_BLOCKS 2048
 
-static Heap *youngGeneration = NULL;
-static Interval youngIntervals[MAX_GARBAGE];
-static int youngCount = 0;
+Heap *youngGeneration = NULL;
+Interval youngIntervals[MAX_GARBAGE];
+int youngCount = 0;
 
-static Heap *oldGeneration = NULL;
+Heap *oldGeneration = NULL;
+Interval oldDeadIntervals[MAX_GARBAGE * 1024];
+int oldDeadCount = 0;
+
+void *dirtyPages[MAX_DIRTY_PAGES];
+int dirtyPagesCount = 0;
+
+FreeBlock freeBlockPool[MAX_FREE_BLOCKS];
+FreeBlock *availableBlocks = NULL;
+FreeBlock *oldFreeList = NULL;
 
 Node *global_root = NULL;
 void *stack_base = NULL;
 
+// ================= DEPENDENCIES =================
+
+static void sigsegv_handler(int sig, siginfo_t *info, void *ucontext) {
+  void *fault_addr = info->si_addr;
+  
+  uintptr_t old_base = (uintptr_t)oldGeneration->base;
+  uintptr_t old_end = old_base + oldGeneration->capacity;
+  
+  if ((uintptr_t)fault_addr >= old_base && (uintptr_t)fault_addr < old_end) {
+    long page_size = sysconf(_SC_PAGESIZE);
+    uintptr_t page_start = ((uintptr_t)fault_addr) & ~(page_size - 1);
+    
+    if (mprotect((void *)page_start, page_size, PROT_READ | PROT_WRITE) == -1) {
+      perror("Falha no mprotect do sinal");
+      exit(1);
+    }
+
+    int exists = 0;
+    for (int i = 0; i < dirtyPagesCount; i++) {
+      if (dirtyPages[i] == (void *)page_start) {
+        exists = 1;
+        break;
+      }
+    }
+
+    if (!exists && dirtyPagesCount < MAX_DIRTY_PAGES) {
+      dirtyPages[dirtyPagesCount++] = (void *)page_start;
+    }
+  } else {
+    fprintf(stderr, "Segmentation faul on address %p\n", fault_addr);
+    exit(1);
+  }
+}
+
+static void init_free_block_pool(void) {
+  for (int i = 0; i < MAX_FREE_BLOCKS - 1; i++) {
+    freeBlockPool[i].next = &freeBlockPool[i + 1];
+  }
+  freeBlockPool[MAX_FREE_BLOCKS - 1].next = NULL;
+  availableBlocks = &freeBlockPool[0];
+  oldFreeList = NULL;
+}
+
+void reset_all_marks(Node *root) {
+  if (root == NULL) return;
+
+  ObjHeader *header = (ObjHeader *)root->i.low;
+  header->marked = 0;
+
+  reset_all_marks(root->left);
+  reset_all_marks(root->right);
+}
+
+// =================== GC MALLOC ==================
+
 void gc_init(void *stack_bottom) {
   stack_base = stack_bottom;
+
+  init_free_block_pool();
 
   if (youngGeneration == NULL) {
     youngGeneration = createHeap(YOUNG_GEN_SIZE);
@@ -37,126 +114,49 @@ void gc_init(void *stack_bottom) {
       exit(1);
     }
   }
-}
 
-static void collect_young_intervals(Node *root) {
-  if (root == NULL || youngCount >= MAX_GARBAGE) return;
-
-  collect_young_intervals(root->left);
-
-  ObjHeader *header = (ObjHeader *)root->i.low;
-
-  if (header->generation == 0) youngIntervals[youngCount++] = root->i;
-
-  collect_young_intervals(root->right);
-}
-
-void gc_sweep(void) {
-  youngCount = 0;
-  
-  collect_young_intervals(global_root);
-
-  for (int i = 0; i < youngCount; i++) {
-    uintptr_t low = youngIntervals[i].low;
-    ObjHeader *header = (ObjHeader *)low;
-    size_t totalSize = sizeof(ObjHeader) + header->size;
-
-    if (header->generation == 0) {
-      void *new_mem = allocHeap(oldGeneration, totalSize);
-
-      if (new_mem == NULL) {
-        perror("Out of Memory on Old Generation during evacuation.");
-        exit(1);
-      }
-
-      memcpy(new_mem, (void *)low, totalSize);
-
-      ObjHeader *new_header = (ObjHeader *)new_mem;
-      new_header->generation = 1;
-      new_header->marked = 0;
-
-      uintptr_t low = (uintptr_t)new_mem;
-      uintptr_t high = low + totalSize;
-      Interval new_i = {low, high};
-
-      insert(&global_root, new_i);
-
-      header->generation = -1;
-      header->marked = 0;
-    } else removeInterval(&global_root, youngIntervals[i]);
+  struct sigaction sa;
+  sa.sa_flags = SA_SIGINFO;
+  sa.sa_sigaction = sigsegv_handler;
+  sigemptyset(&sa.sa_mask);
+  if (sigaction(SIGSEGV, &sa, NULL) == -1) {
+    perror("Fail to register sigaction.");
+    exit(1);
   }
-
-  resetHeap(youngGeneration);
-}
-
-void gc_collect(void) {
-  if (stack_base == NULL) return;
-  
-  jmp_buf registers;
-  setjmp(registers);
-
-  void *stack_top = &registers;
-
-  uintptr_t *current = (uintptr_t *)stack_top;
-  uintptr_t *end = (uintptr_t *)stack_base;
-
-  if (current > end) {
-    uintptr_t *tmp = current;
-    current = end;
-    end = tmp;
-  }
-
-  while (current < end) {
-    uintptr_t pointer = *current;
-
-    Node *node = findPoint(global_root, pointer);
-
-    if (node) {
-      ObjHeader *header = (ObjHeader *)node->i.low;
-
-      if (header->marked == 0) header->marked = 1;
-    }
-
-    current++;
-  }
-
-  gc_sweep();
 }
 
 void *gc_malloc(size_t size) {
   if (size == 0) return NULL;
 
-  if (!youngGeneration) {
+  if (!youngGeneration || !oldGeneration) {
     perror("GC was not initialized.");
     exit(1);
   }
   
   size_t totalSize = sizeof(ObjHeader) + size;
-  int allocatedGeneration = 0;
-
   void *mem = allocHeap(youngGeneration, totalSize);
+  int 
 
-  if (mem == NULL) {
-    gc_collect();
-
+  if (mem == NULL) { 
+    minor_gc_collect();
     mem = allocHeap(youngGeneration, totalSize);
 
     if (mem == NULL) {
+      major_gc_collect();
       mem = allocHeap(oldGeneration, totalSize);
-      allocatedGeneration = 1;
 
       if (mem == NULL) {
-        perror("Out of Memory. Heap is full.");
+        perror("Out of Memory on Young Generation.");
         exit(1);
-      }
+      } 
     }
   }
 
   ObjHeader *header = (ObjHeader *)mem;
   header->size = size;
-  header->generation = allocatedGeneration;
   header->marked = 0;
   header->canary = 0xDEADC0DE;
+  header->forwarded = NULL;
 
   void *pointer = (char *)mem + sizeof(ObjHeader);
 
